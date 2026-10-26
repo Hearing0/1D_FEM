@@ -11,82 +11,85 @@ import cmath
 import math
 import poisson_test as poisson
 
+# Physical constants
+epsilon_r = 5.0
+mu_r = 1.0
+mu0 = 4 * np.pi * 1e-7
+eps0 = 8.854187817e-12
+
+# Telegrahic equation parameters
+L_inductance = 1.0e-6  # per unit length
+C_capacitance = (mu_r * mu0 * epsilon_r * eps0) / L_inductance 
+f = 1e9 
+omega = 2 * np.pi * f
+
 # Initialize problem parameters
-M = 50  # Number of elements
+M = 500  # Number of elements
 L = 1.0  # Length of the domain
 h = L / M  # Element length
+num_nodes = M + 1
 
 # Boundary condition type (1 for Dirichlet, 2 for Neumann, 3 for 3rd Kind)
 bc = 1
-p = 0
-q = 0
-gamma = 0
+p = 100  # Starting value
+q = 0    # Ending value 
 
-epsilon_r = complex(4.0, 0.1)
-mu_r = complex(2.0, 0.0)  
 
-num_nodes = M + 1
+alpha = 1
+beta_o = omega * np.sqrt(L_inductance * C_capacitance)
+beta = -(beta_o**2)
+gamma = 1j * beta
+print(f"Beta (rad/m): {beta}")
 
 # Initialize element properties
-alpha = np.zeros(M)
-beta = np.zeros(M)
-function = np.zeros(M)
-length = np.zeros(M)
-
-# Read in element properties
-for i in range(M):
-    length[i] = h*i
-    alpha[i] = 1*i  # Example initialization
-    beta[i] = 1*i   # Example initialization
-    function[i] = 1
-    # if i <= M/2:
-    #     function[i] = .1*i  # Example initialization
-    # else:
-    #     function[i] = .1*(M-i)  # Example initialization
-
-
-# # Print Initialization of element properties
-# print("Element properties:")
+# phi = np.zeros(M, dtype=complex)
 # for i in range(M):
-#     print(f"Element {i}: length = {length[i]}, alpha = {alpha[i]}, beta = {beta[i]}, function = {function[i]}")
-# print()
+#     phi[i] = alpha + beta*(i + 1)
 
+a = np.zeros(num_nodes, dtype=complex) # Main diagonal of the tridiagonal matrix
+c = np.zeros(num_nodes - 1, dtype=complex) # Upper diagonal of the tridiagonal matrix
+b = np.zeros(num_nodes, dtype=complex) # Right-hand side vector
 
-# Initialize element matrices
-a = np.zeros(num_nodes) # Main diagonal of the tridiagonal matrix
-c = np.zeros(num_nodes - 1) # Upper diagonal of the tridiagonal matrix
-b = np.zeros(num_nodes) # Right-hand side vector
-fin_function = np.zeros(M)
+# # Assemble element matrices
+# for element in range(M):
+#     a[element] += 1 / h
+#     a[element + 1] += 1 / h
+#     c[element] -= 1 / h
 
-# Assemble element matrices
-for element in range(M):
-    a[element] += 1 / h
-    a[element + 1] += 1 / h
-    c[element] -= 1 / h
+#     b[element] += h / 2
+#     b[element + 1] += h / 2
 
-    b[element] += h / 2
-    b[element + 1] += h / 2
-
+k11 = (alpha / h) + (beta * h / 3)
+k12 = (-alpha / h) + (beta * h / 6)
+print(f"k11: {k11}, k12: {k12}")
 # Prepare the system of equations
 for i in range(M):
-    # print(f"Initializing element matrix for i={i}")
-    if (bc != 1 and (i == 0 or i == M)):
-        a[i] += alpha[i] * length[i] + beta[i] * length[i] / 3
-        b[i] += function[i] * length[i] / 2
-    else:
-        a[i] += alpha[i] * length[i] + beta[i] * length[i] / 3 + a[i-1]
-        b[i] += function[i] * length[i] / 2 + b[i-1]
-    if i != M: c[i] += alpha[i] * length[i] + beta[i] * length[i] / 6
+    
+    a[i] += k11
+    a[i + 1] += k11
+    c[i] = k12
+    
+    if (i % 10 == 0):  # Print every 10th element
+        print(f"Element {i}: a[{i}]={a[i]}, a[{i+1}]={a[i+1]}, c[{i}]={c[i]}")
+    
+    # b[i] += phi[i] * h / 2
+    # b[i + 1] += phi[i] * h / 2
 
 
 # Apply Boundry Conditions
-# if bc == 1:
-#     # Apply Dirichlet boundary condition
-#     a[0] = 1.0
-#     b[0] = p
-#     # for i in range(1, M):
-#     #     b[i] = b[i] - p*c[i]
-#     #     c[i] = 0
+if bc == 1:
+    p = 100.0  # Voltage at x = 0
+    q = 0.0    # Voltage at x = L
+
+    # Left boundary (node 0)
+    a[0] = 1.0
+    c[0] = 0.0
+    b[0] = p
+
+    # Right boundary (node M)
+    a[-1] = 1.0
+    d[-1] = 0.0
+    b[-1] = q
 # elif bc == 2:
 #     # Apply Neumann boundary condition
 #     pass 
@@ -96,45 +99,61 @@ for i in range(M):
 #         a[i] += gamma
 #         b[i] += q
 
-# Solve the system of equations (using Gaussian elimination for tridiagonal matrix)
-# Find the modified coefficients for the tridiagonal system
+# --- Thomas Algorithm Solver ---
+# Forward Sweep
+for i in range(1, num_nodes):
+    # w = c[-(i-1)] / a[i-1]
+    w = c[-i] / a[i-1]
+    a[i] = a[i] - w * c[i-1]
+    b[i] = b[i] - w * b[i-1]
+
+# Backward Substitution
+final_phi = np.zeros(num_nodes, dtype=complex)
+final_phi[-1] = b[-1] / a[-1]
+for i in range(num_nodes - 2, -1, -1):
+    final_phi[i] = (b[i] - c[i] * final_phi[i+1]) / a[i]
+
+# # Solve the system of equations (using Gaussian elimination for tridiagonal matrix)
+# # Find the modified coefficients for the tridiagonal system
 # for i in range(1, M):
-#     a[i] += a[i] - c[i-1]* c[i-1] / a[i-1]
-#     b[i] += b[i] - c[i-1] * b[i-1] / a[i-1]
+#     a[i] = a[i] - (c[i-1] * c[i-1]) / a[i-1]
+#     b[i] = b[i] - (c[i-1] * b[i-1]) / a[i-1]
 #     print(f"coefficients; i={i}: a[i]={a[i]}, b[i]={b[i]}")
 
-
-# Test: Poisson equation enforcement
-fin_function = np.linalg.solve(np.diag(a) + np.diag(c, k=1) + np.diag(c, k=-1), b)
-
-# Backwards Gaussian Elimination
+# # Backwards Gaussian Elimination
+# final_phi[M-1] = b[M-1] / a[M-1]
 # for i in range(M-1, 0, -1):
-#     print(f"Backwards elimination; i={i}: a[i]={a[i]}, b[i]={b[i]}, c[i]={c[i]}, fin_function[i+1]={fin_function[i+1] if i < M-1 else 'N/A'}")
-#     if i == M-1: 
-#         fin_function[i] = b[i] / a[i]
-#     else:
-#         fin_function[i] = (b[i] - c[i] * fin_function[i+1]) / a[i]
+#     final_phi[i] = (b[i] - c[i] * final_phi[i]) / a[i]
 
-
-# Print the final solution
-print("Final solution:")
-for i in range(M):
-    print(f"Element {i}: {fin_function[i]}")
-
-# Test against poisson equation
-num_elements = 50
-x, computed, exact = poisson.solve_poisson(num_elements)
-print(num_elements, np.max(np.abs(computed - exact)))
-print(num_elements, np.max(np.abs(fin_function - exact)))
-print(np.max(np.abs(exact)))
-
+print(f"Voltage at x=0: {final_phi[0]:.2f}")
+print(f"Voltage at x=L/2: {final_phi[M//2]:.2f}")
+print(f"Voltage at x=L: {final_phi[-1]:.2f}")
 
 # Graph the final solution
-plt.plot(range(M+1), fin_function, marker='o')
-plt.plot(range(M+1), fin_function, marker='o')
-plt.xlabel('Element')
-plt.ylabel('Reflection')
-# plt.ylim(0,1)
-plt.title('1D FEM Solution')
+# plt.plot(range(num_nodes), abs(final_phi), marker='o')
+# plt.xlabel('Element')
+# plt.ylabel('Reflection')
+# # plt.ylim(0,1)
+# plt.title('1D FEM Solution')
+# plt.grid(True)
+# plt.show()
+
+# --- Plotting ---
+x = np.linspace(0, L, num_nodes)  # Create physical x-axis
+
+plt.figure(figsize=(10, 5))
+plt.plot(x, np.abs(final_phi), 'b-', linewidth=1.5)
+plt.xlabel('Position x (m)')
+plt.ylabel('|V(x)| (Volts)')
+plt.title('Standing Wave Magnitude along Transmission Line (FEM)')
+plt.grid(True)
+plt.show()
+
+# Optional: Plot real part to see the actual instant wave
+plt.figure(figsize=(10, 5))
+plt.plot(x, np.real(final_phi), 'r-', linewidth=1.5)
+plt.xlabel('Position x (m)')
+plt.ylabel('Re{V(x)} (Volts)')
+plt.title('Instantaneous Voltage along Transmission Line (FEM)')
 plt.grid(True)
 plt.show()
