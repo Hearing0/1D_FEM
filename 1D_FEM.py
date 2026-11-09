@@ -1,4 +1,5 @@
 # 1D Finite Element Method implementation in Python
+# Solving for solution: phi_exact = -1/2*x^2 + x
 # By David Flores
 
 #TODO: Add input values using reflection problem
@@ -9,6 +10,8 @@ from tkinter import font
 import tkinter as tk
 import cmath
 import math
+
+from pyparsing import line
 import poisson_test as poisson
 
 # Physical constants
@@ -27,42 +30,38 @@ omega = 2 * np.pi * f
 M = 500  # Number of elements
 L = 1.0  # Length of the domain
 h = L / M  # Element length
-num_nodes = M + 1
+N = M + 1
 
 # Boundary condition type (1 for Dirichlet, 2 for Neumann, 3 for 3rd Kind)
 bc = 1
-p = 100  # Starting value
-q = 0    # Ending value 
+p = 0    # Starting value: phi(0) = p
+q = 0    # Ending Flux: alpha * phi' + gamma * phi = q @ L
 
 
 alpha = 1
-beta_o = omega * np.sqrt(L_inductance * C_capacitance)
-beta = -(beta_o**2)
-gamma = 1j * beta
-print(f"Beta (rad/m): {beta}")
+beta = 0
+gamma = 0
 
 # Initialize element properties
 # phi = np.zeros(M, dtype=complex)
 # for i in range(M):
 #     phi[i] = alpha + beta*(i + 1)
 
-a = np.zeros(num_nodes, dtype=complex) # Main diagonal of the tridiagonal matrix
-c = np.zeros(num_nodes - 1, dtype=complex) # Upper diagonal of the tridiagonal matrix
-b = np.zeros(num_nodes, dtype=complex) # Right-hand side vector
+a = np.zeros(N, dtype=complex) # Main diagonal of the tridiagonal matrix
+c = np.zeros(N - 1, dtype=complex) # Upper diagonal of the tridiagonal matrix
+b = np.zeros(N, dtype=complex) # Right-hand side vector
 
-# # Assemble element matrices
-# for element in range(M):
-#     a[element] += 1 / h
-#     a[element + 1] += 1 / h
-#     c[element] -= 1 / h
+# Assemble Forcing Function Coefficients
+forcing_func = np.zeros(N, dtype=complex)
+for i in range(N):
+    # x = i * h
+    forcing_func[i] = 1.0
 
-#     b[element] += h / 2
-#     b[element + 1] += h / 2
 
+# Prepare the system of equations
 k11 = (alpha / h) + (beta * h / 3)
 k12 = (-alpha / h) + (beta * h / 6)
 print(f"k11: {k11}, k12: {k12}")
-# Prepare the system of equations
 for i in range(M):
     
     a[i] += k11
@@ -72,88 +71,105 @@ for i in range(M):
     if (i % 10 == 0):  # Print every 10th element
         print(f"Element {i}: a[{i}]={a[i]}, a[{i+1}]={a[i+1]}, c[{i}]={c[i]}")
     
-    # b[i] += phi[i] * h / 2
-    # b[i + 1] += phi[i] * h / 2
+    b[i] += forcing_func[i] * h / 2
+    b[i + 1] += forcing_func[i] * h / 2
 
 
 # Apply Boundry Conditions
-if bc == 1:
-    p = 100.0  # Voltage at x = 0
-    q = 0.0    # Voltage at x = L
-
+# if bc == 1:
     # Left boundary (node 0)
     a[0] = 1.0
     c[0] = 0.0
     b[0] = p
 
     # Right boundary (node M)
-    a[-1] = 1.0
-    d[-1] = 0.0
-    b[-1] = q
+    # a[-1] = 1.0
+    # b[-1] = q
+
 # elif bc == 2:
 #     # Apply Neumann boundary condition
 #     pass 
 # elif bc == 3:
-#     # Apply 3rd Kind boundary condition
-#     for i in range(M):
-#         a[i] += gamma
-#         b[i] += q
+#     # Apply Robin (3rd Kind) boundary condition
+    a[-1] += gamma
+    b[-1] += q
 
-# --- Thomas Algorithm Solver ---
-# Forward Sweep
-for i in range(1, num_nodes):
+
+final_phi = np.zeros(N, dtype=complex)
+
+# # --- Thomas Algorithm Solver ---
+# # Forward Sweep
+for i in range(1, N):
     # w = c[-(i-1)] / a[i-1]
     w = c[-i] / a[i-1]
     a[i] = a[i] - w * c[i-1]
     b[i] = b[i] - w * b[i-1]
 
 # Backward Substitution
-final_phi = np.zeros(num_nodes, dtype=complex)
+final_phi = np.zeros(N, dtype=complex)
 final_phi[-1] = b[-1] / a[-1]
-for i in range(num_nodes - 2, -1, -1):
+for i in range(N - 2, -1, -1):
     final_phi[i] = (b[i] - c[i] * final_phi[i+1]) / a[i]
 
-# # Solve the system of equations (using Gaussian elimination for tridiagonal matrix)
-# # Find the modified coefficients for the tridiagonal system
+# Solve the system of equations (using Gaussian elimination for tridiagonal matrix)
+# Find the modified coefficients for the tridiagonal system
 # for i in range(1, M):
-#     a[i] = a[i] - (c[i-1] * c[i-1]) / a[i-1]
+#     a[i] = a[i] - c[i-1]**2 / a[i-1]
 #     b[i] = b[i] - (c[i-1] * b[i-1]) / a[i-1]
 #     print(f"coefficients; i={i}: a[i]={a[i]}, b[i]={b[i]}")
 
 # # Backwards Gaussian Elimination
-# final_phi[M-1] = b[M-1] / a[M-1]
-# for i in range(M-1, 0, -1):
+# final_phi[-1] = b[-1] / a[-1]
+# for i in range(N-1, 0, -1):
 #     final_phi[i] = (b[i] - c[i] * final_phi[i]) / a[i]
 
-print(f"Voltage at x=0: {final_phi[0]:.2f}")
-print(f"Voltage at x=L/2: {final_phi[M//2]:.2f}")
-print(f"Voltage at x=L: {final_phi[-1]:.2f}")
+# final_phi = np.linalg.solve(np.diag(a) + np.diag(c, 1) + np.diag(c, -1), b)
 
-# Graph the final solution
-# plt.plot(range(num_nodes), abs(final_phi), marker='o')
-# plt.xlabel('Element')
-# plt.ylabel('Reflection')
-# # plt.ylim(0,1)
-# plt.title('1D FEM Solution')
-# plt.grid(True)
-# plt.show()
+print(f"Phi at x=0: {final_phi[0]:.2f}")
+print(f"Phi at x=L/2: {final_phi[M//2]:.2f}")
+print(f"Phi at x=L: {final_phi[-1]:.2f}")
+
+
+# Model the exact solution for comparison
+exact_phi = np.zeros(N, dtype=complex)
+for i in range(N):
+    x = i * h
+    exact_phi[i] = x + (-1/2) * x**2
+
+# Calc Residual, Avg Error, and Error till element
+residual = np.abs(final_phi - exact_phi)/np.abs(exact_phi)
+error_till_e = np.zeros(N, dtype=float)
+for i in range(N):
+    error_till_e[i] = np.sum(residual[:i+1]) / N
+error = np.sum(residual) / N
+print(f"Average Error: {error:.6f}")
+
+
 
 # --- Plotting ---
-x = np.linspace(0, L, num_nodes)  # Create physical x-axis
-
+# FEM Solution vs Exact Solution
+x = np.linspace(0, L, N) 
 plt.figure(figsize=(10, 5))
 plt.plot(x, np.abs(final_phi), 'b-', linewidth=1.5)
-plt.xlabel('Position x (m)')
-plt.ylabel('|V(x)| (Volts)')
-plt.title('Standing Wave Magnitude along Transmission Line (FEM)')
+plt.plot(x, np.abs(exact_phi), 'g--', linewidth=1.5)
+plt.legend(['FEM Solution', 'Exact Solution'])
+plt.xlabel('Domain Length (element * e_length)')
+plt.ylabel('Output')
+plt.title('1D FEM Solution vs Exact Solution: -1/2*x^2 + x')
 plt.grid(True)
 plt.show()
 
-# Optional: Plot real part to see the actual instant wave
+# Error vs Element
+e = np.linspace(0, M, N)
 plt.figure(figsize=(10, 5))
-plt.plot(x, np.real(final_phi), 'r-', linewidth=1.5)
-plt.xlabel('Position x (m)')
-plt.ylabel('Re{V(x)} (Volts)')
-plt.title('Instantaneous Voltage along Transmission Line (FEM)')
+plt.plot(e, error_till_e, 'r-', linewidth=1.5)
+plt.xlabel('Element')
+plt.ylabel('Error')
+plt.title('Residual Error per Element')
 plt.grid(True)
 plt.show()
+
+# Error vs h decreasing in log scale
+h_decreasing = np.linspace(L, 0, N)
+plt.figure(figsize=(10, 5))
+plt.plot(e, error_till_e, 'm-', linewidth=1.5)

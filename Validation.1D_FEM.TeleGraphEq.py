@@ -12,7 +12,7 @@ f = 1e9
 omega = 2 * np.pi * f
 
 # --- Ritz Parameters ---
-M = 50  
+M = 500  
 L = 1.0  
 h = L / M  
 num_nodes = M + 1
@@ -63,18 +63,20 @@ a[-1] = 1.0
 d[-1] = 0.0
 b[-1] = q
 
-# --- Thomas Algorithm Solver ---
-# Forward Sweep
+# # --- Thomas Algorithm Solver ---
+# # Forward Sweep
+final_phi = np.zeros(num_nodes, dtype=complex)
 for i in range(1, num_nodes):
     w = d[i-1] / a[i-1]
     a[i] = a[i] - w * c[i-1]
     b[i] = b[i] - w * b[i-1]
 
 # Backward Substitution
-final_phi = np.zeros(num_nodes, dtype=complex)
 final_phi[-1] = b[-1] / a[-1]
 for i in range(num_nodes - 2, -1, -1):
     final_phi[i] = (b[i] - c[i] * final_phi[i+1]) / a[i]
+
+# final_phi = np.linalg.solve(np.diag(a) + np.diag(c, 1) + np.diag(c, -1), b)
 
 print(f"Voltage at x=0: {final_phi[0]:.2f}")
 print(f"Voltage at x=L/2: {final_phi[M//2]:.2f}")
