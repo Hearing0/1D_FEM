@@ -2,7 +2,7 @@
 # Solving for solution: phi_exact = -1/2*x^2 + x
 # By David Flores
 
-#TODO: Add input values using reflection problem
+
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -20,40 +20,37 @@ mu_r = 1.0
 mu0 = 4 * np.pi * 1e-7
 eps0 = 8.854187817e-12
 
-# Telegrahic equation parameters
-L_inductance = 1.0e-6  # per unit length
-C_capacitance = (mu_r * mu0 * epsilon_r * eps0) / L_inductance 
-f = 1e9 
-omega = 2 * np.pi * f
-
 # Initialize problem parameters
-M = 500  # Number of elements
+n_elements = 4  # Number of elements
 L = 1.0  # Length of the domain
-h = L / M  # Element length
-N = M + 1
+h = L / n_elements  # Element length
+n_nodes = n_elements + 1
+n_exact_phi_resolution = 1000
 
 # Boundary condition type (1 for Dirichlet, 2 for Neumann, 3 for 3rd Kind)
 bc = 1
 p = 0    # Starting value: phi(0) = p
-q = 0    # Ending Flux: alpha * phi' + gamma * phi = q @ L
 
+# Neumann boundary parameters
+# neumann_at = 1
+q = 0    # Ending Flux: alpha * phi' + gamma * phi = q @ L
+gamma = 0
 
 alpha = 1
 beta = 0
-gamma = 0
 
 # Initialize element properties
 # phi = np.zeros(M, dtype=complex)
 # for i in range(M):
 #     phi[i] = alpha + beta*(i + 1)
 
-a = np.zeros(N, dtype=complex) # Main diagonal of the tridiagonal matrix
-c = np.zeros(N - 1, dtype=complex) # Upper diagonal of the tridiagonal matrix
-b = np.zeros(N, dtype=complex) # Right-hand side vector
+a = np.zeros(n_nodes, dtype=complex) # Main diagonal of the tridiagonal matrix
+c = np.zeros(n_nodes - 1, dtype=complex) # Upper diagonal of the tridiagonal matrix
+b = np.zeros(n_nodes, dtype=complex) # Right-hand side vector
 
 # Assemble Forcing Function Coefficients
-forcing_func = np.zeros(N, dtype=complex)
-for i in range(N):
+forcing_func = np.zeros(n_nodes, dtype=complex)
+for i in range(n_nodes):
     # x = i * h
     forcing_func[i] = 1.0
 
@@ -62,7 +59,7 @@ for i in range(N):
 k11 = (alpha / h) + (beta * h / 3)
 k12 = (-alpha / h) + (beta * h / 6)
 print(f"k11: {k11}, k12: {k12}")
-for i in range(M):
+for i in range(n_elements):
     
     a[i] += k11
     a[i + 1] += k11
@@ -71,16 +68,21 @@ for i in range(M):
     if (i % 10 == 0):  # Print every 10th element
         print(f"Element {i}: a[{i}]={a[i]}, a[{i+1}]={a[i+1]}, c[{i}]={c[i]}")
     
-    b[i] += forcing_func[i] * h / 2
-    b[i + 1] += forcing_func[i] * h / 2
+    b[i] += forcing_func[i] * (h / 2)
+    b[i + 1] += forcing_func[i] * (h / 2)
+
+c[-1] = k12
+
 
 
 # Apply Boundry Conditions
-# if bc == 1:
+if bc == 1:
     # Left boundary (node 0)
     a[0] = 1.0
-    c[0] = 0.0
     b[0] = p
+    b[1] -= c[0] * p
+    c[0] = 0.0
+    
 
     # Right boundary (node M)
     # a[-1] = 1.0
@@ -91,66 +93,71 @@ for i in range(M):
 #     pass 
 # elif bc == 3:
 #     # Apply Robin (3rd Kind) boundary condition
-    a[-1] += gamma
-    b[-1] += q
+    # a[-1] += gamma
+    # b[-1] += q
+    
+# # Check coefficient arrays
+# print(f"a: {a}")
+# print(f"b: {b}")
+# print(f"c: {c}")
 
 
-final_phi = np.zeros(N, dtype=complex)
+# for i in range(n_nodes):
+#     if i < n_nodes - 1: 
+#         print(f"K[{i}]: {a[i]:.2f}, c[{i}]: {c[i]:.2f}, b[{i}]: {b[i]:.2f}")
 
-# # --- Thomas Algorithm Solver ---
-# # Forward Sweep
-for i in range(1, N):
-    # w = c[-(i-1)] / a[i-1]
-    w = c[-i] / a[i-1]
-    a[i] = a[i] - w * c[i-1]
-    b[i] = b[i] - w * b[i-1]
-
-# Backward Substitution
-final_phi = np.zeros(N, dtype=complex)
-final_phi[-1] = b[-1] / a[-1]
-for i in range(N - 2, -1, -1):
-    final_phi[i] = (b[i] - c[i] * final_phi[i+1]) / a[i]
 
 # Solve the system of equations (using Gaussian elimination for tridiagonal matrix)
 # Find the modified coefficients for the tridiagonal system
-# for i in range(1, M):
-#     a[i] = a[i] - c[i-1]**2 / a[i-1]
-#     b[i] = b[i] - (c[i-1] * b[i-1]) / a[i-1]
-#     print(f"coefficients; i={i}: a[i]={a[i]}, b[i]={b[i]}")
+final_phi = np.zeros(n_nodes, dtype=complex)
+for i in range(1, n_nodes):
+    a[i] = a[i] - ( c[i-1]**2 / a[i-1] )
+    b[i] = b[i] - ((c[i-1] * b[i-1]) / a[i-1])
+    print(f"coefficients; i={i}: a[i]={a[i]}, b[i]={b[i]}")
 
-# # Backwards Gaussian Elimination
-# final_phi[-1] = b[-1] / a[-1]
-# for i in range(N-1, 0, -1):
-#     final_phi[i] = (b[i] - c[i] * final_phi[i]) / a[i]
+# Backwards Gaussian Elimination
+final_phi[-1] = b[-1] / a[-1]
+for i in range(n_nodes-2, 0, -1):
+    final_phi[i] = (b[i] - c[i] * final_phi[i+1]) / a[i]
 
 # final_phi = np.linalg.solve(np.diag(a) + np.diag(c, 1) + np.diag(c, -1), b)
 
-print(f"Phi at x=0: {final_phi[0]:.2f}")
-print(f"Phi at x=L/2: {final_phi[M//2]:.2f}")
-print(f"Phi at x=L: {final_phi[-1]:.2f}")
+# Check coefficients and phi
+for i in range(n_nodes):
+    if i < n_nodes - 1: 
+        print(f"K[{i}]: {a[i]:.2f}, c[{i}]: {c[i]:.2f}, b[{i}]: {b[i]:.2f}")
+    print(f"Phi at node {i}: {final_phi[i]:.2f}")
 
-
-# Model the exact solution for comparison
-exact_phi = np.zeros(N, dtype=complex)
-for i in range(N):
-    x = i * h
+# Model the exact solution for comparison and interpolate final_phi for graphing
+exact_phi = np.zeros(n_exact_phi_resolution, dtype=complex)
+for i in range(n_exact_phi_resolution):
+    x = i * h / (n_exact_phi_resolution / n_elements)
     exact_phi[i] = x + (-1/2) * x**2
+resized_final_phi = np.interp(
+    np.linspace(0, len(final_phi) - 1, n_exact_phi_resolution),
+    np.arange(len(final_phi)),
+    final_phi,
+)
 
 # Calc Residual, Avg Error, and Error till element
-residual = np.abs(final_phi - exact_phi)/np.abs(exact_phi)
-error_till_e = np.zeros(N, dtype=float)
-for i in range(N):
-    error_till_e[i] = np.sum(residual[:i+1]) / N
-error = np.sum(residual) / N
+residual = np.abs(exact_phi - resized_final_phi) / np.abs(exact_phi)
+residual = np.nan_to_num(residual)
+error_till_e = np.zeros(n_exact_phi_resolution, dtype=float)
+# print(f"Sum of residuals: {residual}")
+for i in range(n_exact_phi_resolution):
+    # print(f"Residual at element {i}: {residual[i]:.6f}")
+    error_till_e[i] = np.sum(residual[:(i+1)]) / n_nodes
+    # print(f"Error till element {i}: {error_till_e[i]:.6f}")
+error = np.sum(residual) / n_nodes
 print(f"Average Error: {error:.6f}")
 
 
 
-# --- Plotting ---
+### Plotting
 # FEM Solution vs Exact Solution
-x = np.linspace(0, L, N) 
+x = np.linspace(0, L, n_exact_phi_resolution) 
 plt.figure(figsize=(10, 5))
-plt.plot(x, np.abs(final_phi), 'b-', linewidth=1.5)
+plt.plot(x, np.abs(resized_final_phi), 'b-', linewidth=1.5)
 plt.plot(x, np.abs(exact_phi), 'g--', linewidth=1.5)
 plt.legend(['FEM Solution', 'Exact Solution'])
 plt.xlabel('Domain Length (element * e_length)')
@@ -160,7 +167,7 @@ plt.grid(True)
 plt.show()
 
 # Error vs Element
-e = np.linspace(0, M, N)
+e = np.linspace(0, n_exact_phi_resolution, n_exact_phi_resolution)
 plt.figure(figsize=(10, 5))
 plt.plot(e, error_till_e, 'r-', linewidth=1.5)
 plt.xlabel('Element')
@@ -170,6 +177,13 @@ plt.grid(True)
 plt.show()
 
 # Error vs h decreasing in log scale
-h_decreasing = np.linspace(L, 0, N)
+h_decreasing = np.linspace(L, 0, n_exact_phi_resolution)
 plt.figure(figsize=(10, 5))
-plt.plot(e, error_till_e, 'm-', linewidth=1.5)
+plt.plot(h_decreasing, error_till_e, 'm-', linewidth=1.5)
+plt.yscale('log')
+plt.gca().invert_xaxis()
+plt.xlabel('Domain Length (decreasing)')
+plt.ylabel('Error')
+plt.title('Residual Error vs Domain Length (decreasing)')
+plt.grid(True)
+plt.show()
